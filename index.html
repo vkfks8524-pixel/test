@@ -11,7 +11,8 @@
     .notice { background: #ffe9e9; padding: 10px; }
 
     /* 로그인 버튼이 들어올 자리 */
-    #userArea { margin: 10px 0; color: #666; }
+    #userArea { margin: 10px 0; color: #333; display: flex; align-items: center; gap: 8px; }
+    #userArea button { padding: 4px 8px; cursor: pointer; }
 
     /* 메모 쓰는 칸 */
     #writer { margin: 16px 0; }
@@ -19,8 +20,9 @@
 
     /* 메모가 붙는 담벼락 */
     #wall { display: flex; flex-wrap: wrap; gap: 10px; }
-    .memo { border: 1px solid #ddd; background: #fffde7; padding: 10px; width: 200px; font-size: 15px; }
-    .memo button { float: right; }
+    .memo { border: 1px solid #ddd; background: #fffde7; padding: 10px; width: 200px; font-size: 15px; word-break: break-word; }
+    .memo button { float: right; cursor: pointer; }
+    .memo .author { font-size: 12px; color: #777; margin-top: 8px; }
   </style>
 </head>
 <body>
