@@ -13,6 +13,8 @@ import {
   addDoc,
   deleteDoc,
   doc,
+  getDoc,
+  setDoc,
   getDocs,
   query,
   orderBy,
@@ -42,8 +44,51 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
-// 현재 로그인한 사용자 정보 (null이면 로그아웃 상태)
+// 현재 로그인한 사용자 정보 및 역할 ('student' 또는 'teacher')
 let currentUser = null;
+let currentRole = "student";
+
+// Firestore의 users/{uid} 문서에서 사용자의 역할(교사/학생)을 확인합니다.
+async function checkUserRole(user) {
+  if (!user) {
+    currentRole = "student";
+    return;
+  }
+
+  try {
+    const userRef = doc(db, "users", user.uid);
+    const snap = await getDoc(userRef);
+
+    if (snap.exists()) {
+      currentRole = snap.data().role || "student";
+    } else {
+      // 신규 사용자는 기본값 'student'로 등록합니다.
+      currentRole = "student";
+      await setDoc(userRef, {
+        role: "student",
+        name: user.displayName || "익명",
+        email: user.email || ""
+      });
+    }
+  } catch (err) {
+    console.error("사용자 역할 조회 실패:", err);
+    currentRole = "student";
+  }
+}
+
+// 실습 편의용: 콘솔에서 window.changeMyRole('teacher') 를 실행하면 즉시 교사/학생으로 역할을 바꿀 수 있습니다.
+window.changeMyRole = async function (newRole) {
+  if (!currentUser) {
+    alert("먼저 로그인해 주세요.");
+    return;
+  }
+  const userRef = doc(db, "users", currentUser.uid);
+  await setDoc(userRef, { role: newRole }, { merge: true });
+  currentRole = newRole;
+  renderUserArea();
+  render();
+  alert(`역할이 '${newRole}'(으)로 변경되었습니다.`);
+};
 
 
 // ===================================================
@@ -61,6 +106,24 @@ function renderUserArea() {
     const userSpan = document.createElement("span");
     userSpan.textContent = `${currentUser.displayName || currentUser.email}님 환영합니다!`;
     userArea.appendChild(userSpan);
+
+    // 교사 / 학생 역할 뱃지 표시
+    const roleBadge = document.createElement("span");
+    roleBadge.style.fontSize = "12px";
+    roleBadge.style.padding = "2px 6px";
+    roleBadge.style.borderRadius = "4px";
+    roleBadge.style.fontWeight = "bold";
+
+    if (currentRole === "teacher") {
+      roleBadge.textContent = "교사 (teacher)";
+      roleBadge.style.background = "#e3f2fd";
+      roleBadge.style.color = "#1565c0";
+    } else {
+      roleBadge.textContent = "학생 (student)";
+      roleBadge.style.background = "#f1f8e9";
+      roleBadge.style.color = "#33691e";
+    }
+    userArea.appendChild(roleBadge);
 
     const logoutBtn = document.createElement("button");
     logoutBtn.textContent = "로그아웃";
@@ -98,8 +161,13 @@ function renderUserArea() {
 }
 
 // 로그인 상태 변경 감지 리스너
-onAuthStateChanged(auth, function (user) {
+onAuthStateChanged(auth, async function (user) {
   currentUser = user;
+  if (user) {
+    await checkUserRole(user);
+  } else {
+    currentRole = "student";
+  }
   renderUserArea();
   render();
 });
@@ -167,16 +235,24 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 작성자 본인이거나 작성자 정보가 없는 메모만 삭제(×) 버튼 표시
-  const canDelete = currentUser && (!memo.uid || memo.uid === currentUser.uid);
+  // 교사(teacher)는 모든 메모를 삭제할 수 있고, 학생(student)은 본인이 작성한 메모만 삭제할 수 있습니다.
+  const isTeacher = currentRole === "teacher";
+  const isMyMemo = currentUser && memo.uid === currentUser.uid;
+  const canDelete = currentUser && (isTeacher || isMyMemo || !memo.uid);
+
   if (canDelete) {
     const del = document.createElement("button");
     del.textContent = "×";
-    del.title = "삭제하기";
+    del.title = isTeacher ? "선생님 권한으로 삭제" : "삭제하기";
     // 이벤트 리스너 등록 (addEventListener 방식)
     del.addEventListener("click", async function () {
-      await deleteMemo(memo.id);
-      render();
+      try {
+        await deleteMemo(memo.id);
+        render();
+      } catch (err) {
+        alert("삭제 권한이 없습니다.");
+        console.error("삭제 실패:", err);
+      }
     });
     div.appendChild(del);
   }

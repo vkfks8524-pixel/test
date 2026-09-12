@@ -2,14 +2,53 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /memos/{memoId} {
-      // 메모 읽기 및 삭제 허용
-      allow read, delete: if true;
 
-      // 5글자 이상 입력 시 저장되지 않도록 제한 (5글자 미만인 1~4글자만 저장 허용)
-      // 만약 "5글자 이하 허용(6글자 이상 차단)"을 원하시면 <= 5 로 수정하실 수 있습니다.
-      allow create, update: if request.resource.data.text is string
-                            && request.resource.data.text.size() < 5;
+    // 로그인 여부 확인
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // 교사(teacher) 여부 확인 함수:
+    // 1. users 컬렉션의 본인 문서에 role이 'teacher'로 지정되어 있거나,
+    // 2. 또는 교사 UID 목록(teacherUids)에 포함되어 있는 경우
+    function isTeacher() {
+      return isSignedIn() && (
+        // [방법 1] 교사 UID 직접 지정 (필요 시 교사 구글 계정 UID를 여기에 추가)
+        request.auth.uid in ['TEACHER_UID_1', 'TEACHER_UID_2']
+        // [방법 2] users/{uid} 문서의 role 필드가 'teacher'인 경우
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher')
+      );
+    }
+
+    // 메모(memos) 컬렉션 규칙
+    match /memos/{memoId} {
+      // 1. 읽기: 모든 사용자(학생, 교사)가 담벼락 메모를 볼 수 있습니다.
+      allow read: if true;
+
+      // 2. 생성:
+      //    - 교사(teacher): 자유롭게 생성 가능
+      //    - 학생(student): 로그인한 본인의 uid로 된 메모만 생성 가능
+      allow create: if isSignedIn() && (
+        isTeacher() || (
+          request.resource.data.uid == request.auth.uid
+        )
+      );
+
+      // 3. 수정 및 삭제:
+      //    - 교사(teacher): 모든 메모를 수정하거나 삭제할 수 있는 전체 권한
+      //    - 학생(student): 다른 사람의 메모는 절대 건들지 못하며, 본인이 작성한 메모만 수정/삭제 가능
+      //      (만약 학생의 삭제까지 완전히 금지하고 교사만 삭제하게 하려면 '|| resource.data.uid == request.auth.uid' 부분을 제거하시면 됩니다)
+      allow update, delete: if isSignedIn() && (
+        isTeacher() || resource.data.uid == request.auth.uid
+      );
+    }
+
+    // 사용자 역할/정보(users) 컬렉션 규칙
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      // 교사는 다른 사용자의 역할도 지정할 수 있고, 사용자는 본인 프로필 생성/수정 가능
+      allow write: if isSignedIn() && (isTeacher() || request.auth.uid == userId);
     }
   }
 }
